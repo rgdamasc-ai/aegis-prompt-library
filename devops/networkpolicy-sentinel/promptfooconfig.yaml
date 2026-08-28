@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: "CP06 — NetworkPolicy do Sentinel: valida YAML correto, ausência de allow-all, portas de egress e comentários"
+
+prompts:
+  - file://./prompt.md
+
+providers:
+  - id: google:gemini-2.5-flash-lite
+    config:
+      temperature: 0.0
+
+defaultTest:
+  assert:
+    # Limite operacional de latência
+    - type: latency
+      threshold: 15000
+    # A saída deve conter YAML com kind: NetworkPolicy
+    - type: contains
+      value: "kind: NetworkPolicy"
+    # Deve declarar policyTypes com Ingress
+    - type: contains
+      value: "Ingress"
+    # Deve declarar policyTypes com Egress
+    - type: contains
+      value: "Egress"
+    # Não deve conter regra allow-all (- {} em ingress/egress)
+    - type: javascript
+      value: |
+        // Detecta o padrão "- {}" que representa allow-all em NetworkPolicy
+        // Procura por linhas que contenham apenas "- {}" após espaços
+        const lines = output.split('\n');
+        const allowAllLines = lines.filter(l => l.trim() === '- {}');
+        return allowAllLines.length === 0;
+    # Deve liberar Forge na porta 5432
+    - type: contains
+      value: "5432"
+    # Deve liberar Cerebro na porta 9200
+    - type: contains
+      value: "9200"
+    # Deve liberar DNS na porta 53
+    - type: contains
+      value: "53"
+    # Deve mencionar o Relay no ingress (app: relay)
+    - type: regex
+      value: "app:\\s*relay"
+    # Toda regra deve ter comentário — verificar presença de # nas regras
+    - type: regex
+      value: "#\\s*\\w+"
+
+tests:
+  - description: "Manifesto permissivo do Sentinel → NetworkPolicy hardened com default-deny"
+    vars:
+      manifesto_permissivo: |
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: sentinel-allow
+          namespace: sentinel-prod
+        spec:
+          podSelector: {}
+          policyTypes:
+            - Ingress
+            - Egress
+          ingress:
+            - {}
+          egress:
+            - {}
+      regras_padrao: |
+        NetworkPolicy para o namespace "sentinel-prod":
+        - pods do Sentinel só aceitam tráfego de entrada do Relay (consumo de eventos)
+          e do gateway de API da plataforma
+        - pods do Sentinel só fazem saída para: Forge (warehouse, porta 5432),
+          Cerebro (busca, porta 9200) e DNS interno
+        - nada de "allow all" em ingress ou egress
+        - política default-deny explícita no namespace
+        - toda regra precisa de comentário dizendo qual fluxo legítimo ela libera
+      mapa_servicos: |
+        Sentinel     → namespace sentinel-prod, pods com label app=sentinel
+        Relay        → namespace relay-prod,    pods com label app=relay
+        API gateway  → namespace edge,          pods com label app=api-gateway
+        Forge        → namespace forge-prod,    pods com label app=forge,   porta 5432
+        Cerebro      → namespace cerebro-prod,  pods com label app=cerebro, porta 9200
+        DNS interno  → namespace kube-system,   pods com label k8s-app=kube-dns, porta 53
+    assert:
+      # Deve usar o namespace sentinel-prod
+      - type: contains
+        value: "sentinel-prod"
+      # Deve restringir ao label app=sentinel
+      - type: regex
+        value: "app:\\s*sentinel"
+      # Deve mencionar o API gateway no ingress
+      - type: regex
+        value: "app:\\s*api-gateway"
+      # Deve mencionar forge no egress
+      - type: regex
+        value: "app:\\s*forge"
+      # Deve mencionar cerebro no egress
+      - type: regex
+        value: "app:\\s*cerebro"
+      # Deve ter TCP na regra do DNS (ambos protocolos)
+      - type: contains
+        value: "TCP"
+      # Deve ter UDP na regra do DNS
+      - type: contains
+        value: "UDP"

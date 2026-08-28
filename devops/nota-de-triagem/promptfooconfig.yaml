@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: "CP02 — Nota de triagem: valida os 5 campos obrigatórios, handle @equipe e concisão (≤ 8 linhas)"
+
+prompts:
+  - file://./prompt.md
+
+providers:
+  - id: google:gemini-2.5-flash-lite
+    config:
+      temperature: 0.0
+
+defaultTest:
+  assert:
+    # Limite operacional de latência
+    - type: latency
+      threshold: 15000
+    # Os cinco rótulos obrigatórios devem estar presentes
+    - type: contains
+      value: "ALERTA:"
+    - type: contains
+      value: "IMPACTO:"
+    - type: contains
+      value: "HIPÓTESE INICIAL:"
+    - type: contains
+      value: "AÇÃO IMEDIATA:"
+    - type: contains
+      value: "ESCALAR PARA:"
+    # O campo ESCALAR PARA deve conter um handle no formato @palavra
+    - type: regex
+      value: "ESCALAR PARA:.*@\\w+"
+    # A nota deve ser concisa: no máximo 8 linhas não-vazias
+    - type: javascript
+      value: |
+        const nonEmptyLines = output.split('\n').filter(l => l.trim().length > 0);
+        return nonEmptyLines.length <= 8;
+
+tests:
+  # Entrada 1 — autoscaler atingiu limite máximo
+  - description: "Entrada 1: autoscaler no limite (Sentinel) com tenant onboarding nova região"
+    vars:
+      alerta_cru: >
+        2026-05-12 14:02:09 UTC [Sentinel] autoscaler hit max replicas (60/60) on sentinel-api,
+        queue depth on Relay growing 2k/min, CPU avg 88%, tenant stark-industries
+        sending 4x baseline volume after onboarding new region
+    assert:
+      # Deve mencionar o sistema Sentinel ou autoscaler (case-insensitive via JS)
+      - type: javascript
+        value: "/(Sentinel|autoscaler|réplicas|replicas)/i.test(output)"
+      # Deve mencionar o impacto no Relay ou na fila
+      - type: javascript
+        value: "/(Relay|fila|queue|capacidade)/i.test(output)"
+
+  # Entrada 2 — taxa de rejeição do Relay após deploy
+  - description: "Entrada 2: taxa de rejeição Relay 6% após deploy 02:55"
+    vars:
+      alerta_cru: >
+        2026-05-13 03:11:00 UTC [Relay] ingest reject rate 6% for 8min, tenant wakanda-systems,
+        buffer saturated after deploy 02:55
+    assert:
+      # Deve mencionar o Relay como sistema afetado
+      - type: contains
+        value: "Relay"
+      # Deve mencionar a taxa de rejeição ou buffer
+      - type: javascript
+        value: "/(rejeição|reject|buffer|ingestão)/i.test(output)"
+      # Deve mencionar o deploy como hipótese
+      - type: javascript
+        value: "/(deploy|02:55|implantação)/i.test(output)"
+
+  # Entrada 3 — lag crescente no Forge
+  - description: "Entrada 3: lag crescente no Forge após falha de job anterior"
+    vars:
+      alerta_cru: >
+        2026-05-13 11:40:22 UTC [Forge] consumer lag 9min and climbing, batch forge-batch-ingest
+        delayed after previous job failure, downstream Sentinel starting to lag
+    assert:
+      # Deve mencionar o Forge como sistema afetado
+      - type: contains
+        value: "Forge"
+      # Deve mencionar lag ou atraso
+      - type: javascript
+        value: "/(lag|atraso|atrasado|climbing)/i.test(output)"
+      # Deve mencionar o job falho como hipótese
+      - type: javascript
+        value: "/(job|batch|falha|failure|anterior)/i.test(output)"

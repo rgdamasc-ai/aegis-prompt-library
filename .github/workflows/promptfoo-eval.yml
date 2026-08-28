@@ -1,0 +1,203 @@
+name: Promptfoo Eval — Playbook de IA Operacional
+
+# CP10 — Pipeline de avaliação contínua dos prompts
+# Roda a suíte completa de testes a cada PR e push para main.
+# Falha o build se qualquer prompt regredir.
+#
+# Decisões de design:
+#   Gate determinístico: asserts de formato e latência falham o build.
+#   Gate LLM-judge (causa-raiz): falha o build se nota < 6 ou critério zerado.
+#   Escopo: roda apenas os prompts alterados no PR (paths filter) para economizar tokens.
+#   Fallback: push direto para main roda a suíte completa sem filtro de paths.
+#   Secrets: GOOGLE_API_KEY no repositório GitHub Secrets.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Detecta quais configs de teste foram alteradas no PR
+  # ---------------------------------------------------------------------------
+  detect-changes:
+    name: Detectar prompts alterados
+    runs-on: ubuntu-latest
+    outputs:
+      triagem-de-pods: ${{ steps.changes.outputs.triagem-de-pods }}
+      nota-de-triagem: ${{ steps.changes.outputs.nota-de-triagem }}
+      causa-raiz: ${{ steps.changes.outputs.causa-raiz }}
+      networkpolicy-sentinel: ${{ steps.changes.outputs.networkpolicy-sentinel }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            triagem-de-pods:
+              - 'devops/triagem-de-pods/**'
+            nota-de-triagem:
+              - 'devops/nota-de-triagem/**'
+            causa-raiz:
+              - 'devops/causa-raiz/**'
+            networkpolicy-sentinel:
+              - 'devops/networkpolicy-sentinel/**'
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Roda os testes determinísticos (CP08)
+  # Asserts de formato e latência — falha imediata e objetiva
+  # ---------------------------------------------------------------------------
+  eval-deterministic:
+    name: Avaliação determinística (CP08)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    # Roda se: push direto para main (sem filtro) OU PR com mudanças nos prompts
+    if: |
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.triagem-de-pods == 'true' ||
+      needs.detect-changes.outputs.nota-de-triagem == 'true' ||
+      needs.detect-changes.outputs.networkpolicy-sentinel == 'true'
+    strategy:
+      fail-fast: false   # continuar outros prompts mesmo se um falhar
+      matrix:
+        prompt:
+          - name: triagem-de-pods
+            config: devops/triagem-de-pods/promptfooconfig.yaml
+            changed: ${{ needs.detect-changes.outputs.triagem-de-pods }}
+          - name: nota-de-triagem
+            config: devops/nota-de-triagem/promptfooconfig.yaml
+            changed: ${{ needs.detect-changes.outputs.nota-de-triagem }}
+          - name: networkpolicy-sentinel
+            config: devops/networkpolicy-sentinel/promptfooconfig.yaml
+            changed: ${{ needs.detect-changes.outputs.networkpolicy-sentinel }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar promptfoo
+        run: npm install -g promptfoo@latest
+
+      - name: Avaliar ${{ matrix.prompt.name }}
+        # Em PR: só roda se o prompt foi alterado. Em push para main: sempre roda.
+        if: github.event_name == 'push' || matrix.prompt.changed == 'true'
+        run: promptfoo eval --config ${{ matrix.prompt.config }} --no-cache --output output-${{ matrix.prompt.name }}.json
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PROMPTFOO_DISABLE_TELEMETRY: 1
+
+      - name: Salvar resultado ${{ matrix.prompt.name }}
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ matrix.prompt.name }}
+          path: output-${{ matrix.prompt.name }}.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Gate de qualidade LLM-as-judge para causa-raiz (CP09)
+  # Rubrica 4 critérios × 0-2, corte ≥ 6, nenhum critério zerado
+  # ---------------------------------------------------------------------------
+  eval-llm-judge:
+    name: Gate LLM-as-judge — causa-raiz (CP09)
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.causa-raiz == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar promptfoo
+        run: npm install -g promptfoo@latest
+
+      - name: Avaliar causa-raiz com LLM-judge
+        run: promptfoo eval --config devops/causa-raiz/promptfooconfig.yaml --no-cache --output output-causa-raiz.json
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PROMPTFOO_DISABLE_TELEMETRY: 1
+
+      - name: Publicar resultado como comentário no PR
+        if: github.event_name == 'pull_request'
+        uses: promptfoo/github-action@v1
+        with:
+          config: devops/causa-raiz/promptfooconfig.yaml
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Salvar resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-causa-raiz
+          path: output-causa-raiz.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Comentar resultados gerais no PR
+  # ---------------------------------------------------------------------------
+  comment-pr:
+    name: Comentar resultados no PR
+    runs-on: ubuntu-latest
+    needs: [eval-deterministic, eval-llm-judge]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download de todos os artefatos
+        uses: actions/download-artifact@v4
+        with:
+          path: eval-results/
+          pattern: eval-*
+
+      - name: Comentar resumo no PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            let body = '## Promptfoo Eval — Playbook de IA Operacional\n\n';
+            const resultsDir = 'eval-results';
+
+            if (!fs.existsSync(resultsDir)) {
+              body += '⚠️ Nenhum resultado de avaliação encontrado.\n';
+            } else {
+              const dirs = fs.readdirSync(resultsDir);
+              for (const dir of dirs) {
+                const jsonPath = path.join(resultsDir, dir, `output-${dir.replace('eval-', '')}.json`);
+                if (!fs.existsSync(jsonPath)) continue;
+
+                try {
+                  const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+                  const stats = data.results?.stats || {};
+                  const passed = stats.successes || 0;
+                  const failed = stats.failures || 0;
+                  const total = passed + failed;
+                  const icon = failed === 0 ? '✅' : '❌';
+                  body += `${icon} **${dir.replace('eval-', '')}**: ${passed}/${total} asserts passaram\n`;
+                } catch (e) {
+                  body += `⚠️ **${dir}**: erro ao ler resultado\n`;
+                }
+              }
+            }
+
+            body += '\nVer artefatos para detalhes completos.';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
