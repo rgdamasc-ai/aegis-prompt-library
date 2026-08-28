@@ -133,13 +133,6 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           PROMPTFOO_DISABLE_TELEMETRY: 1
 
-      - name: Publicar resultado como comentário no PR
-        if: github.event_name == 'pull_request'
-        uses: promptfoo/github-action@v1
-        with:
-          config: devops/causa-raiz/promptfooconfig.yaml
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Salvar resultado
         if: always()
         uses: actions/upload-artifact@v4
