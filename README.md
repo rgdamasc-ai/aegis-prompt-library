@@ -1,5 +1,7 @@
 # Playbook de IA Operacional — Aegis
 
+[![Promptfoo Eval](https://github.com/rgdamasc-ai/aegis-prompt-library/actions/workflows/promptfoo-eval.yml/badge.svg)](https://github.com/rgdamasc-ai/aegis-prompt-library/actions/workflows/promptfoo-eval.yml)
+
 Biblioteca de prompts parametrizáveis para a equipe de engenharia da Aegis, tratada como código: versionada, testada e pronta para uso em plantão.
 
 > Entrega do capstone do Módulo 3 — AIOps & GenAI no Cotidiano Técnico.

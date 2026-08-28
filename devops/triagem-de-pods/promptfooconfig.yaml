@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+# Atualizado: versão do Node.js no workflow corrigida para >=22 (promptfoo exige)
 description: "CP01 — Triagem de pods: valida causa provável e ação recomendada para os três cenários de entrada"
 
 prompts:
