@@ -71,12 +71,13 @@ Ver [PASSOS-MANUAIS.md](./PASSOS-MANUAIS.md) para outros provedores e detalhes d
 
 ### Evidências de CI (CP10)
 
-| Execução | PR | Resultado | Link |
-|----------|----|-----------|------|
-| Suíte completa — todos os prompts passando | [PR #1](https://github.com/rgdamasc-ai/aegis-prompt-library/pull/1) | ✅ 3/3 prompts | [Run #6](https://github.com/rgdamasc-ai/aegis-prompt-library/actions/runs/33131732493) |
-| Regressão proposital — campo `ALERTA:` renomeado para `ALERTA_CRITICO:` | [PR #2](https://github.com/rgdamasc-ai/aegis-prompt-library/pull/2) | ❌ nota-de-triagem falhou | [Run #7](https://github.com/rgdamasc-ai/aegis-prompt-library/actions/runs/33131750029) |
+| Execução | Resultado | Link |
+|----------|-----------|------|
+| Suíte completa em `main` — 4/4 jobs passando (CP08 + CP09) | ✅ PASS | [Run #10](https://github.com/rgdamasc-ai/aegis-prompt-library/actions/runs/33165788043) |
+| Regressão proposital em PR — campo `ALERTA:` → `ALERTA_CRITICO:` | ❌ nota-de-triagem falhou | [Run #7](https://github.com/rgdamasc-ai/aegis-prompt-library/actions/runs/33131750029) |
 
-O pipeline detectou a regressão antes do merge (PR #2 foi fechado sem merge). Ver [PASSOS-MANUAIS.md](./PASSOS-MANUAIS.md#5-decis%C3%B5es-de-design-do-pipeline-cp10--justificativa-estendida) para as 6 decisões de design com alternativas comparadas.
+Run #10 inclui: triagem-de-pods ✅, nota-de-triagem ✅, networkpolicy-sentinel ✅, Gate LLM-as-judge causa-raiz ✅ (score 8/8).
+O pipeline detectou a regressão antes do merge ([PR #2](https://github.com/rgdamasc-ai/aegis-prompt-library/pull/2) foi fechado sem merge). Ver [PASSOS-MANUAIS.md](./PASSOS-MANUAIS.md#5-decis%C3%B5es-de-design-do-pipeline-cp10--justificativa-estendida) para as 6 decisões de design com alternativas comparadas.
 
 ---
 
