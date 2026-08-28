@@ -19,6 +19,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   # ---------------------------------------------------------------------------
   # Job 1: Detecta quais configs de teste foram alteradas no PR
