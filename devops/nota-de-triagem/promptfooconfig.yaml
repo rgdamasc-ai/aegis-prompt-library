@@ -14,9 +14,10 @@ defaultTest:
     # Limite operacional de latência
     - type: latency
       threshold: 15000
-    # Os cinco rótulos obrigatórios devem estar presentes
+    # REGRESSÃO PROPOSITAL: campo obrigatório renomeado incorretamente de ALERTA para ALERTA_CRITICO
+    # Este assert vai falhar porque o prompt gera "ALERTA:" mas estamos verificando "ALERTA_CRITICO:"
     - type: contains
-      value: "ALERTA:"
+      value: "ALERTA_CRITICO:"
     - type: contains
       value: "IMPACTO:"
     - type: contains
